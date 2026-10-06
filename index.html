@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Momo's Lost Stars</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        background: #101827;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+    }
+
+    canvas {
+        display: block;
+        margin: auto;
+        width: 100vw;
+        height: 100vh;
+        object-fit: contain;
+    }
+</style>
+</head>
+
+<body>
+
+<canvas id="game" width="1000" height="600"></canvas>
+
+<script>
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const WIDTH = 1000;
+const HEIGHT = 600;
+
+/* =========================
+   GAME STATE
+========================= */
+
+let screen = "menu";
+let currentLevel = 0;
+let score = 0;
+
+const keys = {};
+
+let stars = [];
+let particles = [];
+
+/* =========================
+   LEVEL DATA
+========================= */
+
+const levels = [
+
+    {
+        name: "Green Garden",
+        starsNeeded: 5,
+        background: "#183b35",
+        platform: "#4f915c",
+
+        platforms: [
+            [0, 540, 1000, 60],
+            [80, 450, 180, 22],
+            [340, 390, 180, 22],
+            [600, 455, 180, 22],
+            [820, 350, 120, 22]
+        ],
+
+        stars: [
+            [150, 410],
+            [420, 350],
+            [675, 415],
+            [860, 310],
+            [520, 500]
+        ],
+
+        portal: [900, 470]
+    },
+
+    {
+        name: "Moonlight Forest",
+        starsNeeded: 7,
+        background: "#17294b",
+        platform: "#536f9e",
+
+        platforms: [
+            [0, 540, 1000, 60],
+            [50, 445, 150, 22],
+            [260, 375, 140, 22],
+            [470, 455, 150, 22],
+            [680, 355, 130, 22],
+            [850, 430, 110, 22],
+            [390, 285, 130, 22]
+        ],
+
+        stars: [
+            [100, 405],
+            [310, 335],
+            [520, 415],
+            [735, 315],
+            [900, 390],
+            [440, 245],
+            [580, 500]
+        ],
+
+        portal: [925, 370]
+    },
+
+    {
+        name: "Frozen Sky",
+        starsNeeded: 10,
+        background: "#18394c",
+        platform: "#79b6c8",
+
+        platforms: [
+            [0, 540, 1000, 60],
+            [70, 445, 120, 20],
+            [245, 395, 120, 20],
+            [420, 330, 120, 20],
+            [600, 410, 120, 20],
+            [770, 300, 120, 20],
+            [900, 430, 100, 20],
+            [330, 220, 120, 20],
+            [520, 160, 120, 20]
+        ],
+
+        stars: [
+            [110, 405],
+            [285, 355],
+            [460, 290],
+            [640, 370],
+            [815, 260],
+            [945, 390],
+            [370, 180],
+            [560, 120],
+            [680, 500],
+            [510, 500]
+        ],
+
+        portal: [850, 245]
+    }
+
+];
+
+/* =========================
+   PLAYER
+========================= */
+
+const player = {
+    x: 50,
+    y: 480,
+
+    width: 34,
+    height: 48,
+
+    velocityX: 0,
+    velocityY: 0,
+
+    speed: 4.5,
+    jumpPower: 11,
+
+    grounded: false
+};
+
+/* =========================
+   START / RESET
+========================= */
+
+function startGame() {
+
+    currentLevel = 0;
+
+    screen = "play";
+
+    loadLevel();
+}
+
+function loadLevel() {
+
+    const level = levels[currentLevel];
+
+    score = 0;
+
+    player.x = 45;
+    player.y = 480;
+
+    player.velocityX = 0;
+    player.velocityY = 0;
+
+    player.grounded = false;
+
+    stars = level.stars.map(position => ({
+        x: position[0],
+        y: position[1],
+        collected: false
+    }));
+
+    particles = [];
+}
+
+/* =========================
+   KEYBOARD
+========================= */
+
+window.addEventListener("keydown", function(event) {
+
+    keys[event.key] = true;
+
+    if (
+        event.key === " " ||
+        event.key === "ArrowLeft" ||
+        event.key === "ArrowRight"
+    ) {
+        event.preventDefault();
+    }
+
+    if (
+        event.key === " " &&
+        player.grounded &&
+        screen === "play"
+    ) {
+
+        player.velocityY = -player.jumpPower;
+
+        player.grounded = false;
+    }
+
+});
+
+window.addEventListener("keyup", function(event) {
+
+    keys[event.key] = false;
+
+});
+
+/* =========================
+   COLLISION
+========================= */
+
+function overlaps(a, b) {
+
+    return (
+        a.x < b[0] + b[2] &&
+        a.x + a.width > b[0] &&
+        a.y < b[1] + b[3] &&
+        a.y + a.height > b[1]
+    );
+}
+
+/* =========================
+   UPDATE
+========================= */
+
+function update() {
+
+    if (screen !== "play") {
+        return;
+    }
+
+    const level = levels[currentLevel];
+
+    /* Horizontal movement */
+
+    player.velocityX = 0;
+
+    if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
+        player.velocityX = -player.speed;
+    }
+
+    if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
+        player.velocityX = player.speed;
+    }
+
+    player.x += player.velocityX;
+
+    /* Keep player inside screen */
+
+    if (player.x < 0) {
+        player.x = 0;
+    }
+
+    if (player.x + player.width > WIDTH) {
+        player.x = WIDTH - player.width;
+    }
+
+    /* Gravity */
+
+    player.velocityY += 0.55;
+
+    if (player.velocityY > 14) {
+        player.velocityY = 14;
+    }
+
+    const previousBottom =
+        player.y + player.height;
+
+    player.y += player.velocityY;
+
+    player.grounded = false;
+
+    /* Platform collision */
+
+    for (const platform of level.platforms) {
+
+        const platformTop = platform[1];
+
+        const horizontalOverlap =
+            player.x + player.width > platform[0] &&
+            player.x < platform[0] + platform[2];
+
+        const crossedPlatform =
+            previousBottom <= platformTop &&
+            player.y + player.height >= platformTop;
+
+        if (
+            horizontalOverlap &&
+            crossedPlatform &&
+            player.velocityY >= 0
+        ) {
+
+            player.y =
+                platformTop - player.height;
+
+            player.velocityY = 0;
+
+            player.grounded = true;
+        }
+    }
+
+    /* Collect stars */
+
+    for (const star of stars) {
+
+        if (star.collected) {
+            continue;
+        }
+
+        const distanceX =
+            player.x + player.width / 2 - star.x;
+
+        const distanceY =
+            player.y + player.height / 2 - star.y;
+
+        const distance =
+            Math.sqrt(
+                distanceX * distanceX +
+                distanceY * distanceY
+            );
+
+        if (distance < 30) {
+
+            star.collected = true;
+
+            score++;
+
+            createParticles(
+                star.x,
+                star.y
+            );
+        }
+    }
+
+    /* Portal */
+
+    const portal = level.portal;
+
+    const portalRect = {
+        x: portal[0] - 10,
+        y: portal[1],
+        width: 55,
+        height: 70
+    };
+
+    if (
+        score === level.starsNeeded &&
+        player.x < portalRect.x + portalRect.width &&
+        player.x + player.width > portalRect.x &&
+        player.y < portalRect.y + portalRect.height &&
+        player.y + player.height > portalRect.y
+    ) {
+
+        screen = "complete";
+    }
+
+    /* Fell off map */
+
+    if (player.y > HEIGHT + 100) {
+
+        player.x = 45;
+        player.y = 480;
+
+        player.velocityX = 0;
+        player.velocityY = 0;
+    }
+
+    /* Particles */
+
+    for (const particle of particles) {
+
+        particle.x += particle.velocityX;
+        particle.y += particle.velocityY;
+
+        particle.life--;
+    }
+
+    particles =
+        particles.filter(
+            particle => particle.life > 0
+        );
+}
+
+/* =========================
+   PARTICLES
+========================= */
+
+function createParticles(x, y) {
+
+    for (let i = 0; i < 12; i++) {
+
+        particles.push({
+
+            x: x,
+
+            y: y,
+
+            velocityX:
+                (Math.random() - 0.5) * 5,
+
+            velocityY:
+                (Math.random() - 0.5) * 5,
+
+            life: 30
+        });
+    }
+}
+
+/* =========================
+   DRAW PLAYER
+========================= */
+
+function drawPlayer() {
+
+    const x = player.x;
+    const y = player.y;
+
+    /* Body */
+
+    ctx.fillStyle = "#f28faa";
+
+    ctx.fillRect(
+        x + 5,
+        y + 12,
+        24,
+        30
+    );
+
+    /* Head */
+
+    ctx.beginPath();
+
+    ctx.arc(
+        x + 17,
+        y + 12,
+        17,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+    /* Ears */
+
+    ctx.fillStyle = "#e87f9c";
+
+    ctx.fillRect(
+        x + 1,
+        y + 3,
+        9,
+        9
+    );
+
+    ctx.fillRect(
+        x + 25,
+        y + 3,
+        9,
+        9
+    );
+
+    /* Eyes */
+
+    ctx.fillStyle = "#222";
+
+    ctx.fillRect(
+        x + 10,
+        y + 8,
+        4,
+        5
+    );
+
+    ctx.fillRect(
+        x + 21,
+        y + 8,
+        4,
+        5
+    );
+
+    /* Eye shine */
+
+    ctx.fillStyle = "#fff";
+
+    ctx.fillRect(
+        x + 11,
+        y + 8,
+        2,
+        2
+    );
+
+    ctx.fillRect(
+        x + 22,
+        y + 8,
+        2,
+        2
+    );
+
+}
+
+/* =========================
+   DRAW STAR
+========================= */
+
+function drawStar(x, y, radius) {
+
+    ctx.save();
+
+    ctx.translate(x, y);
+
+    ctx.fillStyle = "#ffd166";
+
+    ctx.beginPath();
+
+    for (let i = 0; i < 10; i++) {
+
+        const angle =
+            -Math.PI / 2 +
+            i * Math.PI / 5;
+
+        const size =
+            i % 2 === 0
+                ? radius
+                : radius * 0.42;
+
+        ctx.lineTo(
+            Math.cos(angle) * size,
+            Math.sin(angle) * size
+        );
+    }
+
+    ctx.closePath();
+
+    ctx.fill();
+
+    ctx.restore();
+}
+
+/* =========================
+   DRAW MENU
+========================= */
+
+function drawMenu() {
+
+    ctx.fillStyle = "#15213a";
+
+    ctx.fillRect(
+        0,
+        0,
+        WIDTH,
+        HEIGHT
+    );
+
+    drawStar(
+        500,
+        115,
+        42
+    );
+
+    ctx.textAlign = "center";
+
+    ctx.fillStyle = "#ffffff";
+
+    ctx.font =
+        "bold 48px Arial";
+
+    ctx.fillText(
+        "MOMO'S LOST STARS",
+        500,
+        190
+    );
+
+    ctx.font =
+        "20px Arial";
+
+    ctx.fillStyle = "#cbd5e1";
+
+    ctx.fillText(
+        "A tiny 2D platform adventure",
+        500,
+        225
+    );
+
+    drawButton(
+        335,
+        280,
+        330,
+        55,
+        "PLAY GAME"
+    );
+
+    drawButton(
+        335,
+        355,
+        330,
+        55,
+        "HOW TO PLAY",
+        "#536f9e"
+    );
+
+    ctx.font =
+        "14px Arial";
+
+    ctx.fillStyle = "#94a3b8";
+
+    ctx.fillText(
+        "Collect every star • Find the portal • Complete all 3 levels",
+        500,
+        485
+    );
+
+    ctx.textAlign = "left";
+}
+
+/* =========================
+   BUTTON
+========================= */
+
+function drawButton(
+    x,
+    y,
+    width,
+    height,
+    text,
+    color = "#d96b8b"
+) {
+
+    ctx.fillStyle = color;
+
+    ctx.fillRect(
+        x,
+        y,
+        width,
+        height
+    );
+
+    ctx.fillStyle = "#ffffff";
+
+    ctx.textAlign = "center";
+
+    ctx.font =
+        "bold 18px Arial";
+
+    ctx.fillText(
+        text,
+        x + width / 2,
+        y + 35
+    );
+
+    ctx.textAlign = "left";
+}
+
+/* =========================
+   DRAW GAME
+========================= */
+
+function drawGame() {
+
+    const level = levels[currentLevel];
+
+    /* Background */
+
+    ctx.fillStyle =
+        level.background;
+
+    ctx.fillRect(
+        0,
+        0,
+        WIDTH,
+        HEIGHT
+    );
+
+    /* Stars in sky */
+
+    ctx.fillStyle =
+        "rgba(255,255,255,0.65)";
+
+    for (let i = 0; i < 40; i++) {
+
+        const x =
+            (i * 137) % WIDTH;
+
+        const y =
+            (i * 71) % 300;
+
+        ctx.fillRect(
+            x,
+            y,
+            2,
+            2
+        );
+    }
+
+    /* Moon */
+
+    if (currentLevel > 0) {
+
+        ctx.fillStyle =
+            "rgba(255,255,255,0.18)";
+
+        ctx.beginPath();
+
+        ctx.arc(
+            820,
+            100,
+            48,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+    }
+
+    /* Platforms */
+
+    for (const platform of level.platforms) {
+
+        ctx.fillStyle =
+            level.platform;
+
+        ctx.fillRect(
+            platform[0],
+            platform[1],
+            platform[2],
+            platform[3]
+        );
+
+        ctx.fillStyle =
+            "rgba(255,255,255,0.15)";
+
+        ctx.fillRect(
+            platform[0],
+            platform[1],
+            platform[2],
+            5
+        );
+    }
+
+    /* Stars */
+
+    for (const star of stars) {
+
+        if (!star.collected) {
+
+            drawStar(
+                star.x,
+                star.y,
+                12
+            );
+        }
+    }
+
+    /* Portal */
+
+    const portal =
+        level.portal;
+
+    ctx.fillStyle =
+        score === level.starsNeeded
+            ? "#c77dff"
+            : "#555";
+
+    ctx.fillRect(
+        portal[0],
+        portal[1],
+        36,
+        70
+    );
+
+    ctx.beginPath();
+
+    ctx.arc(
+        portal[0] + 18,
+        portal[1] + 10,
+        18,
+        Math.PI,
+        0
+    );
+
+    ctx.fill();
+
+    /* Player */
+
+    drawPlayer();
+
+    /* HUD */
+
+    ctx.fillStyle =
+        "rgba(10,15,30,0.78)";
+
+    ctx.fillRect(
+        20,
+        18,
+        390,
+        65
+    );
+
+    ctx.fillStyle = "#ffffff";
+
+    ctx.font =
+        "bold 20px Arial";
+
+    ctx.fillText(
+        "MOMO'S LOST STARS",
+        35,
+        44
+    );
+
+    ctx.font =
+        "15px Arial";
+
+    ctx.fillText(
+        `Level ${currentLevel + 1}/3 • ${level.name}`,
+        35,
+        68
+    );
+
+    ctx.font =
+        "bold 20px Arial";
+
+    ctx.fillText(
+        `⭐ ${score}/${level.starsNeeded}`,
+        835,
+        45
+    );
+
+    if (score < level.starsNeeded) {
+
+        ctx.font =
+            "13px Arial";
+
+        ctx.fillStyle =
+            "#ffffff";
+
+        ctx.fillText(
+            "Collect all stars to unlock the portal",
+            650,
+            70
+        );
+    }
+
+    /* Particles */
+
+    for (const particle of particles) {
+
+        ctx.fillStyle = "#ffd166";
+
+        ctx.fillRect(
+            particle.x,
+            particle.y,
+            4,
+            4
+        );
+    }
+}
+
+/* =========================
+   COMPLETE SCREEN
+========================= */
+
+function drawComplete() {
+
+    const level = levels[currentLevel];
+
+    ctx.fillStyle =
+        level.background;
+
+    ctx.fillRect(
+        0,
+        0,
+        WIDTH,
+        HEIGHT
+    );
+
+    ctx.fillStyle =
+        "rgba(5,10,20,0.78)";
+
+    ctx.fillRect(
+        180,
+        100,
+        640,
+        400
+    );
+
+    ctx.textAlign = "center";
+
+    ctx.fillStyle = "#ffffff";
+
+    ctx.font =
+        "bold 46px Arial";
+
+    ctx.fillText(
+        "LEVEL COMPLETE!",
+        500,
+        190
+    );
+
+    ctx.font =
+        "20px Arial";
+
+    ctx.fillStyle =
+        "#cbd5e1";
+
+    ctx.fillText(
+        `You collected ${score}/${level.starsNeeded} stars.`,
+        500,
+        235
+    );
+
+    drawButton(
+        335,
+        285,
+        330,
+        55,
+        currentLevel === 2
+            ? "FINISH GAME"
+            : "NEXT LEVEL"
+    );
+
+    drawButton(
+        335,
+        360,
+        330,
+        55,
+        "MAIN MENU",
+        "#536f9e"
+    );
+
+    ctx.textAlign = "left";
+}
+
+/* =========================
+   WIN SCREEN
+========================= */
+
+function drawWin() {
+
+    ctx.fillStyle =
+        "#16263d";
+
+    ctx.fillRect(
+        0,
+        0,
+        WIDTH,
+        HEIGHT
+    );
+
+    for (let i = 0; i < 35; i++) {
+
+        drawStar(
+            (i * 97) % WIDTH,
+            70 + ((i * 53) % 460),
+            7
+        );
+    }
+
+    ctx.fillStyle =
+        "rgba(8,12,25,0.9)";
+
+    ctx.fillRect(
+        180,
+        100,
+        640,
+        400
+    );
+
+    ctx.textAlign = "center";
+
+    ctx.fillStyle =
+        "#ffffff";
+
+    ctx.font =
+        "bold 55px Arial";
+
+    ctx.fillText(
+        "YOU WIN!",
+        500,
+        190
+    );
+
+    ctx.font =
+        "22px Arial";
+
+    ctx.fillStyle =
+        "#cbd5e1";
+
+    ctx.fillText(
+        "Momo found all the lost stars!",
+        500,
+        235
+    );
+
+    drawButton(
+        335,
+        285,
+        330,
+        55,
+        "PLAY AGAIN"
+    );
+
+    drawButton(
+        335,
+        360,
+        330,
+        55,
+        "MAIN MENU",
+        "#536f9e"
+    );
+
+    ctx.textAlign = "left";
+}
+
+/* =========================
+   MOUSE / TOUCH
+========================= */
+
+canvas.addEventListener(
+    "click",
+    function(event) {
+
+        const rect =
+            canvas.getBoundingClientRect();
+
+        const scaleX =
+            WIDTH / rect.width;
+
+        const scaleY =
+            HEIGHT / rect.height;
+
+        const x =
+            (event.clientX - rect.left) *
+            scaleX;
+
+        const y =
+            (event.clientY - rect.top) *
+            scaleY;
+
+        /* Main menu */
+
+        if (screen === "menu") {
+
+            if (
+                x >= 335 &&
+                x <= 665 &&
+                y >= 280 &&
+                y <= 335
+            ) {
+
+                startGame();
+            }
+
+            else if (
+                x >= 335 &&
+                x <= 665 &&
+                y >= 355 &&
+                y <= 410
+            ) {
+
+                alert(
+                    "HOW TO PLAY\n\n" +
+                    "A / D or Arrow Keys — Move\n" +
+                    "Space — Jump\n\n" +
+                    "Collect every star.\n" +
+                    "Then enter the glowing portal.\n\n" +
+                    "Complete all three levels!"
+                );
+            }
+        }
+
+        /* Level complete */
+
+        else if (
+            screen === "complete"
+        ) {
+
+            if (
+                x >= 335 &&
+                x <= 665 &&
+                y >= 285 &&
+                y <= 340
+            ) {
+
+                if (currentLevel < 2) {
+
+                    currentLevel++;
+
+                    loadLevel();
+
+                    screen = "play";
+
+                } else {
+
+                    screen = "win";
+                }
+            }
+
+            else if (
+                x >= 335 &&
+                x <= 665 &&
+                y >= 360 &&
+                y <= 415
+            ) {
+
+                screen = "menu";
+            }
+        }
+
+        /* Victory */
+
+        else if (
+            screen === "win"
+        ) {
+
+            if (
+                x >= 335 &&
+                x <= 665 &&
+                y >= 285 &&
+                y <= 340
+            ) {
+
+                startGame();
+            }
+
+            else if (
+                x >= 335 &&
+                x <= 665 &&
+                y >= 360 &&
+                y <= 415
+            ) {
+
+                screen = "menu";
+            }
+        }
+    }
+);
+
+/* =========================
+   DRAW LOOP
+========================= */
+
+function draw() {
+
+    if (screen === "menu") {
+
+        drawMenu();
+
+    }
+
+    else if (screen === "play") {
+
+        drawGame();
+
+    }
+
+    else if (screen === "complete") {
+
+        drawComplete();
+
+    }
+
+    else if (screen === "win") {
+
+        drawWin();
+    }
+}
+
+/* =========================
+   MAIN LOOP
+========================= */
+
+function gameLoop() {
+
+    update();
+
+    draw();
+
+    requestAnimationFrame(gameLoop);
+}
+
+loadLevel();
+
+gameLoop();
+
+</script>
+
+</body>
+</html>
